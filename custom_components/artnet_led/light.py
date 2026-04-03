@@ -14,14 +14,10 @@ from homeassistant.components.light import (
     ATTR_RGBW_COLOR,
     ATTR_RGBWW_COLOR,
     ATTR_TRANSITION,
-    COLOR_MODE_BRIGHTNESS,
-    COLOR_MODE_COLOR_TEMP,
-    COLOR_MODE_RGB,
-    COLOR_MODE_RGBW,
-    COLOR_MODE_RGBWW,
-    SUPPORT_TRANSITION,
+    ColorMode,
+    LightEntityFeature,
     PLATFORM_SCHEMA,
-    LightEntity, COLOR_MODE_ONOFF, COLOR_MODE_WHITE,
+    LightEntity,
 )
 from homeassistant.util.color import color_rgb_to_rgbw
 from homeassistant.const import CONF_DEVICES, STATE_OFF, STATE_ON
@@ -31,7 +27,7 @@ from homeassistant.const import CONF_NAME as CONF_DEVICE_NAME
 from homeassistant.const import CONF_PORT as CONF_NODE_PORT
 from homeassistant.const import CONF_TYPE as CONF_DEVICE_TYPE
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_registry import async_get, RegistryEntry
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.restore_state import RestoreEntity
 
 CONF_DEVICE_TRANSITION = ATTR_TRANSITION
@@ -39,12 +35,6 @@ CONF_DEVICE_TRANSITION = ATTR_TRANSITION
 CONF_INITIAL_VALUES = "initial_values"
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
-
-REQUIREMENTS = ["pyartnet == 0.8.3"]
-
-log.info(f"PyArtNet: {REQUIREMENTS[0]}")
-log.info(f"Version : 2021.07.10")
 
 CONF_NODE_MAX_FPS = "max_fps"
 CONF_NODE_REFRESH = "refresh_every"
@@ -89,11 +79,6 @@ ARTNET_NODES = {}
 
 
 async def async_setup_platform(hass: HomeAssistant, config, async_add_devices, discovery_info=None):
-    import pprint
-
-    for line in pprint.pformat(config).splitlines():
-        log.info(line)
-
     host = config.get(CONF_NODE_HOST)
     port = config.get(CONF_NODE_PORT)
 
@@ -107,12 +92,11 @@ async def async_setup_platform(hass: HomeAssistant, config, async_add_devices, d
             refresh_every=config[CONF_NODE_REFRESH],
         )
         await __node.start()
-        ARTNET_NODES[id] = __node
-    node = ARTNET_NODES[id]
+        ARTNET_NODES[__id] = __node
+    node = ARTNET_NODES[__id]
     assert isinstance(node, pyartnet.ArtNetNode), type(node)
 
-    entity_registry = async_get(hass)
-    await entity_registry.async_load()
+    entity_registry = er.async_get(hass)
 
     device_list = []
     used_unique_ids = []
@@ -143,7 +127,7 @@ async def async_setup_platform(hass: HomeAssistant, config, async_add_devices, d
             # If the entity has another unique ID, use that until it's migrated properly
             entity = entity_registry.async_get(entity_id)
             if entity:
-                logging.info(f"Found existing entity for name {entity_id}, using unique id {unique_id}")
+                log.info(f"Found existing entity for name {entity_id}, using unique id {unique_id}")
                 if entity.unique_id is not None and entity.unique_id not in used_unique_ids:
                     unique_id = entity.unique_id
             used_unique_ids.append(unique_id)
@@ -313,7 +297,7 @@ class DmxBaseLight(LightEntity, RestoreEntity):
         """
         self._transition = kwargs.get(ATTR_TRANSITION, self._fade_time)
 
-        logging.debug(
+        log.debug(
             "Turning off '%s' with transition  %i", self._name, self._transition
         )
         self._channel.add_fade(
@@ -381,8 +365,8 @@ class DmxBinary(DmxBaseLight):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._channel_width = 1
-        self._supported_color_modes.add(COLOR_MODE_ONOFF)
-        self._color_mode = COLOR_MODE_ONOFF
+        self._supported_color_modes.add(ColorMode.ONOFF)
+        self._color_mode = ColorMode.ONOFF
 
     def get_target_values(self):
         return [self.brightness * self._channel_size[2]]
@@ -420,9 +404,9 @@ class DmxDimmer(DmxBaseLight):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._channel_width = 1
-        self._supported_color_modes.add(COLOR_MODE_BRIGHTNESS)
-        self._features = SUPPORT_TRANSITION
-        self._color_mode = COLOR_MODE_BRIGHTNESS
+        self._supported_color_modes.add(ColorMode.BRIGHTNESS)
+        self._features = LightEntityFeature.TRANSITION
+        self._color_mode = ColorMode.BRIGHTNESS
 
     def get_target_values(self):
         return [self.brightness * self._channel_size[2]]
@@ -451,10 +435,10 @@ class DmxWhite(DmxBaseLight):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._supported_color_modes.add(COLOR_MODE_COLOR_TEMP)
-        self._supported_color_modes.add(COLOR_MODE_WHITE)
-        self._features = SUPPORT_TRANSITION
-        self._color_mode = COLOR_MODE_COLOR_TEMP
+        self._supported_color_modes.add(ColorMode.COLOR_TEMP)
+        self._supported_color_modes.add(ColorMode.WHITE)
+        self._features = LightEntityFeature.TRANSITION
+        self._color_mode = ColorMode.COLOR_TEMP
         # Intentionally switching min and max here; it's inverted in the conversion.
         self._min_mireds = convert_to_mireds(kwargs[CONF_DEVICE_MAX_TEMP])
         self._max_mireds = convert_to_mireds(kwargs[CONF_DEVICE_MIN_TEMP])
@@ -545,9 +529,9 @@ class DmxRGB(DmxBaseLight):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._supported_color_modes.add(COLOR_MODE_RGB)
-        self._features = SUPPORT_TRANSITION
-        self._color_mode = COLOR_MODE_RGB
+        self._supported_color_modes.add(ColorMode.RGB)
+        self._features = LightEntityFeature.TRANSITION
+        self._color_mode = ColorMode.RGB
         self._vals = (255, 255, 255)
 
         self._channel_setup = kwargs.get(CONF_CHANNEL_SETUP) or "rgb"
@@ -637,9 +621,9 @@ class DmxRGBW(DmxBaseLight):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._supported_color_modes.add(COLOR_MODE_RGBW)
-        self._features = SUPPORT_TRANSITION
-        self._color_mode = COLOR_MODE_RGBW
+        self._supported_color_modes.add(ColorMode.RGBW)
+        self._features = LightEntityFeature.TRANSITION
+        self._color_mode = ColorMode.RGBW
         self._vals = (255, 255, 255, 255)
 
         self._channel_setup = kwargs.get(CONF_CHANNEL_SETUP) or "rgbw"
@@ -683,7 +667,6 @@ class DmxRGBW(DmxBaseLight):
         values = list()
         for channel in self._channel_setup:
             calculation_function = switcher.get(channel, lambda: 0)
-            log.info(f"DEBUGGY for {channel}: {calculation_function()}")
             value = calculation_function()
             if value < 0 or value > 256:
                 log.warning(f"Value for channel {channel} isn't within bound: {value}")
@@ -727,9 +710,9 @@ class DmxRGBWW(DmxBaseLight):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._supported_color_modes.add(COLOR_MODE_RGBWW)
-        self._features = SUPPORT_TRANSITION
-        self._color_mode = COLOR_MODE_RGBWW
+        self._supported_color_modes.add(ColorMode.RGBWW)
+        self._features = LightEntityFeature.TRANSITION
+        self._color_mode = ColorMode.RGBWW
         # Intentionally switching min and max here; it's inverted in the conversion.
         self._min_mireds = convert_to_mireds(kwargs[CONF_DEVICE_MAX_TEMP])
         self._max_mireds = convert_to_mireds(kwargs[CONF_DEVICE_MIN_TEMP])

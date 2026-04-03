@@ -12,5 +12,6 @@
     ],
     "requirements": ["pyartnet==0.8.4"],
     "iot_class": "assumed_state",
-    "version": "0.0.3"
-  }
+    "version": "0.1.0",
+    "homeassistant": "2024.1.0"
+}
